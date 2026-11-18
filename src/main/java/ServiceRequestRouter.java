@@ -45,7 +45,7 @@ public class ServiceRequestRouter {
 
     private static class ServiceRequest {
         private final String description;
-        private final Category category;
+        private Category category;
         private Status status;
 
         ServiceRequest(String description, Category category) {
@@ -83,7 +83,8 @@ public class ServiceRequestRouter {
                 System.out.println("\n1. Create a request");
                 System.out.println("2. View requests");
                 System.out.println("3. Update a request status");
-                System.out.println("4. Exit");
+                System.out.println("4. Reroute a request");
+                System.out.println("5. Exit");
                 System.out.print("Choose an option: ");
 
                 String choice = scanner.nextLine().trim();
@@ -98,10 +99,13 @@ public class ServiceRequestRouter {
                         updateRequestStatus(scanner, requests);
                         break;
                     case "4":
+                        rerouteRequest(scanner, requests);
+                        break;
+                    case "5":
                         running = false;
                         break;
                     default:
-                        System.out.println("Please enter a number from 1 to 4.");
+                        System.out.println("Please enter a number from 1 to 5.");
                         break;
                 }
             }
@@ -141,7 +145,7 @@ public class ServiceRequestRouter {
         }
 
         printRequests(requests);
-        Integer index = readRequestNumber(scanner, requests.size());
+        Integer index = readRequestNumber(scanner, requests.size(), "update");
         if (index == null) return;
 
         System.out.println("Choose a status:");
@@ -168,8 +172,39 @@ public class ServiceRequestRouter {
         }
     }
 
-    private static Integer readRequestNumber(Scanner scanner, int size) {
-        System.out.print("Enter the request number to update: ");
+    private static void rerouteRequest(Scanner scanner, List<ServiceRequest> requests) {
+        if (requests.isEmpty()) {
+            System.out.println("There are no requests to reroute.");
+            return;
+        }
+
+        printRequests(requests);
+        Integer index = readRequestNumber(scanner, requests.size(), "reroute");
+        if (index == null) return;
+
+        ServiceRequest request = requests.get(index);
+        Category oldCategory = request.category;
+        Category newCategory = readCategory(scanner);
+
+        if (newCategory == oldCategory) {
+            System.out.println("Request remains routed to: " + newCategory.actioner);
+            return;
+        }
+
+        request.category = newCategory;
+        try {
+            saveRequests(requests);
+            System.out.println("Request " + (index + 1) + " rerouted from " + oldCategory.label
+                    + " to " + newCategory.label + ".");
+            System.out.println("New actioner: " + newCategory.actioner);
+        } catch (IOException e) {
+            request.category = oldCategory;
+            System.err.println("Could not save the reroute: " + e.getMessage());
+        }
+    }
+
+    private static Integer readRequestNumber(Scanner scanner, int size, String action) {
+        System.out.print("Enter the request number to " + action + ": ");
         try {
             int choice = Integer.parseInt(scanner.nextLine().trim());
             if (choice >= 1 && choice <= size) return choice - 1;
