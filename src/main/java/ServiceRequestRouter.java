@@ -30,18 +30,38 @@ public class ServiceRequestRouter {
         }
     }
 
+    private enum Status {
+        OPEN("Open"),
+        IN_PROGRESS("In Progress"),
+        WAITING("Waiting"),
+        COMPLETED("Completed");
+
+        private final String label;
+
+        Status(String label) {
+            this.label = label;
+        }
+    }
+
     private static class ServiceRequest {
         private final String description;
         private final Category category;
+        private Status status;
 
         ServiceRequest(String description, Category category) {
+            this(description, category, Status.OPEN);
+        }
+
+        ServiceRequest(String description, Category category, Status status) {
             this.description = description;
             this.category = category;
+            this.status = status;
         }
 
         @Override
         public String toString() {
-            return "[" + category.label + "] " + description + " -> " + category.actioner;
+            return "[" + category.label + "] [" + status.label + "] " + description
+                    + " -> " + category.actioner;
         }
     }
 
@@ -60,46 +80,119 @@ public class ServiceRequestRouter {
             boolean running = true;
 
             while (running) {
-                System.out.print("\nEnter a short description of your service request: ");
-                String description = scanner.nextLine().trim();
-                if (description.isEmpty()) {
-                    System.out.println("A request description cannot be empty.");
-                    continue;
-                }
+                System.out.println("\n1. Create a request");
+                System.out.println("2. View requests");
+                System.out.println("3. Update a request status");
+                System.out.println("4. Exit");
+                System.out.print("Choose an option: ");
 
-                Category category = readCategory(scanner);
-                ServiceRequest request = new ServiceRequest(description, category);
-                requests.add(request);
-                try {
-                    saveRequests(requests);
-                    System.out.println("Request submitted and routed to: " + category.actioner);
-                    System.out.println("Saved to " + DATA_FILE.toAbsolutePath());
-                } catch (IOException e) {
-                    requests.remove(request);
-                    System.err.println("Could not save the request: " + e.getMessage());
+                String choice = scanner.nextLine().trim();
+                switch (choice) {
+                    case "1":
+                        createRequest(scanner, requests);
+                        break;
+                    case "2":
+                        printRequests(requests);
+                        break;
+                    case "3":
+                        updateRequestStatus(scanner, requests);
+                        break;
+                    case "4":
+                        running = false;
+                        break;
+                    default:
+                        System.out.println("Please enter a number from 1 to 4.");
+                        break;
                 }
-
-                System.out.print("Submit another request? (y/n): ");
-                running = scanner.nextLine().trim().equalsIgnoreCase("y");
             }
         }
 
         System.out.println("\n=== Saved Requests ===");
+        printRequests(requests);
+        System.out.println("Goodbye!");
+    }
+
+    private static void createRequest(Scanner scanner, List<ServiceRequest> requests) {
+        System.out.print("Enter a short description of your service request: ");
+        String description = scanner.nextLine().trim();
+        if (description.isEmpty()) {
+            System.out.println("A request description cannot be empty.");
+            return;
+        }
+
+        Category category = readCategory(scanner);
+        ServiceRequest request = new ServiceRequest(description, category);
+        requests.add(request);
+        try {
+            saveRequests(requests);
+            System.out.println("Request submitted and routed to: " + category.actioner);
+            System.out.println("Status: " + request.status.label);
+            System.out.println("Saved to " + DATA_FILE.toAbsolutePath());
+        } catch (IOException e) {
+            requests.remove(request);
+            System.err.println("Could not save the request: " + e.getMessage());
+        }
+    }
+
+    private static void updateRequestStatus(Scanner scanner, List<ServiceRequest> requests) {
+        if (requests.isEmpty()) {
+            System.out.println("There are no requests to update.");
+            return;
+        }
+
+        printRequests(requests);
+        Integer index = readRequestNumber(scanner, requests.size());
+        if (index == null) return;
+
+        System.out.println("Choose a status:");
+        Status[] statuses = Status.values();
+        for (int i = 0; i < statuses.length; i++) {
+            System.out.println((i + 1) + ". " + statuses[i].label);
+        }
+        System.out.print("Status number: ");
+
+        try {
+            int choice = Integer.parseInt(scanner.nextLine().trim());
+            if (choice < 1 || choice > statuses.length) {
+                System.out.println("Please enter a valid status number.");
+                return;
+            }
+            ServiceRequest request = requests.get(index);
+            request.status = statuses[choice - 1];
+            saveRequests(requests);
+            System.out.println("Request " + (index + 1) + " status updated to: " + request.status.label);
+        } catch (NumberFormatException e) {
+            System.out.println("Please enter a valid status number.");
+        } catch (IOException e) {
+            System.err.println("Could not save the status update: " + e.getMessage());
+        }
+    }
+
+    private static Integer readRequestNumber(Scanner scanner, int size) {
+        System.out.print("Enter the request number to update: ");
+        try {
+            int choice = Integer.parseInt(scanner.nextLine().trim());
+            if (choice >= 1 && choice <= size) return choice - 1;
+            System.out.println("Please enter a request number from 1 to " + size + ".");
+        } catch (NumberFormatException e) {
+            System.out.println("Please enter a valid request number.");
+        }
+        return null;
+    }
+
+    private static void printRequests(List<ServiceRequest> requests) {
         if (requests.isEmpty()) {
             System.out.println("No requests have been submitted.");
-        } else {
-            for (int i = 0; i < requests.size(); i++) {
-                System.out.println((i + 1) + ". " + requests.get(i));
-            }
+            return;
         }
-        System.out.println("Goodbye!");
+        for (int i = 0; i < requests.size(); i++) {
+            System.out.println((i + 1) + ". " + requests.get(i));
+        }
     }
 
     private static List<ServiceRequest> loadRequests() throws IOException {
         List<ServiceRequest> requests = new ArrayList<>();
-        if (!Files.exists(DATA_FILE)) {
-            return requests;
-        }
+        if (!Files.exists(DATA_FILE)) return requests;
 
         Object parsed = new JsonParser(new String(Files.readAllBytes(DATA_FILE), StandardCharsets.UTF_8)).parse();
         if (!(parsed instanceof List<?>)) {
@@ -112,13 +205,19 @@ public class ServiceRequestRouter {
             Map<?, ?> object = (Map<?, ?>) item;
             Object description = object.get("description");
             Object categoryName = object.get("category");
+            Object statusName = object.get("status");
             if (!(description instanceof String) || !(categoryName instanceof String)) {
                 throw new IllegalArgumentException("each request needs string description and category fields");
             }
             try {
-                requests.add(new ServiceRequest((String) description, Category.valueOf((String) categoryName)));
+                Category category = Category.valueOf((String) categoryName);
+                Status status = Status.OPEN;
+                if (statusName instanceof String) {
+                    status = Status.valueOf((String) statusName);
+                }
+                requests.add(new ServiceRequest((String) description, category, status));
             } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("unknown saved request category: " + categoryName);
+                throw new IllegalArgumentException("unknown saved request category or status: " + e.getMessage());
             }
         }
         return requests;
@@ -130,6 +229,7 @@ public class ServiceRequestRouter {
             ServiceRequest request = requests.get(i);
             json.append("  {\"description\": ").append(jsonString(request.description))
                     .append(", \"category\": ").append(jsonString(request.category.name()))
+                    .append(", \"status\": ").append(jsonString(request.status.name()))
                     .append(", \"actioner\": ").append(jsonString(request.category.actioner)).append("}");
             if (i < requests.size() - 1) json.append(',');
             json.append('\n');
@@ -166,11 +266,8 @@ public class ServiceRequestRouter {
                 case '\r': escaped.append("\\r"); break;
                 case '\t': escaped.append("\\t"); break;
                 default:
-                    if (c < 0x20) {
-                        escaped.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        escaped.append(c);
-                    }
+                    if (c < 0x20) escaped.append(String.format("\\u%04x", (int) c));
+                    else escaped.append(c);
             }
         }
         return escaped.append('"').toString();
@@ -184,16 +281,10 @@ public class ServiceRequestRouter {
                 System.out.println((i + 1) + ". " + categories[i].label);
             }
             System.out.print("Category number: ");
-            String input = scanner.nextLine().trim();
-
             try {
-                int choice = Integer.parseInt(input);
-                if (choice >= 1 && choice <= categories.length) {
-                    return categories[choice - 1];
-                }
-            } catch (NumberFormatException ignored) {
-                // Show the menu again for non-numeric input.
-            }
+                int choice = Integer.parseInt(scanner.nextLine().trim());
+                if (choice >= 1 && choice <= categories.length) return categories[choice - 1];
+            } catch (NumberFormatException ignored) {}
             System.out.println("Please enter a number from 1 to " + categories.length + ".");
         }
     }
@@ -203,9 +294,7 @@ public class ServiceRequestRouter {
         private final String input;
         private int position;
 
-        JsonParser(String input) {
-            this.input = input;
-        }
+        JsonParser(String input) { this.input = input; }
 
         Object parse() {
             Object value = readValue();
