@@ -81,7 +81,7 @@ public class ServiceRequestRouter {
 
             while (running) {
                 System.out.println("\n1. Create a request");
-                System.out.println("2. View requests");
+                System.out.println("2. View/filter requests");
                 System.out.println("3. Update a request status");
                 System.out.println("4. Reroute a request");
                 System.out.println("5. Exit");
@@ -93,7 +93,7 @@ public class ServiceRequestRouter {
                         createRequest(scanner, requests);
                         break;
                     case "2":
-                        printRequests(requests);
+                        filterRequests(scanner, requests);
                         break;
                     case "3":
                         updateRequestStatus(scanner, requests);
@@ -135,6 +135,58 @@ public class ServiceRequestRouter {
         } catch (IOException e) {
             requests.remove(request);
             System.err.println("Could not save the request: " + e.getMessage());
+        }
+    }
+
+    private static void filterRequests(Scanner scanner, List<ServiceRequest> requests) {
+        if (requests.isEmpty()) {
+            System.out.println("No requests have been submitted.");
+            return;
+        }
+
+        Status status = readStatusFilter(scanner);
+        Category category = readCategoryFilter(scanner);
+        int matchingRequests = printRequests(requests, status, category);
+        System.out.println("Showing " + matchingRequests + " matching request(s).");
+    }
+
+    private static Status readStatusFilter(Scanner scanner) {
+        Status[] statuses = Status.values();
+        while (true) {
+            System.out.println("Filter by status (or choose all):");
+            System.out.println("1. All statuses");
+            for (int i = 0; i < statuses.length; i++) {
+                System.out.println((i + 2) + ". " + statuses[i].label);
+            }
+            System.out.print("Status filter: ");
+            try {
+                int choice = Integer.parseInt(scanner.nextLine().trim());
+                if (choice == 1) return null;
+                if (choice >= 2 && choice <= statuses.length + 1) return statuses[choice - 2];
+            } catch (NumberFormatException ignored) {
+                // Show the filter choices again for non-numeric input.
+            }
+            System.out.println("Please choose a valid status filter.");
+        }
+    }
+
+    private static Category readCategoryFilter(Scanner scanner) {
+        Category[] categories = Category.values();
+        while (true) {
+            System.out.println("Filter by category (or choose all):");
+            System.out.println("1. All categories");
+            for (int i = 0; i < categories.length; i++) {
+                System.out.println((i + 2) + ". " + categories[i].label);
+            }
+            System.out.print("Category filter: ");
+            try {
+                int choice = Integer.parseInt(scanner.nextLine().trim());
+                if (choice == 1) return null;
+                if (choice >= 2 && choice <= categories.length + 1) return categories[choice - 2];
+            } catch (NumberFormatException ignored) {
+                // Show the filter choices again for non-numeric input.
+            }
+            System.out.println("Please choose a valid category filter.");
         }
     }
 
@@ -223,6 +275,24 @@ public class ServiceRequestRouter {
         for (int i = 0; i < requests.size(); i++) {
             System.out.println((i + 1) + ". " + requests.get(i));
         }
+    }
+
+    private static int printRequests(List<ServiceRequest> requests, Status statusFilter,
+            Category categoryFilter) {
+        int matchingRequests = 0;
+        for (int i = 0; i < requests.size(); i++) {
+            ServiceRequest request = requests.get(i);
+            boolean matchesStatus = statusFilter == null || request.status == statusFilter;
+            boolean matchesCategory = categoryFilter == null || request.category == categoryFilter;
+            if (matchesStatus && matchesCategory) {
+                System.out.println((i + 1) + ". " + request);
+                matchingRequests++;
+            }
+        }
+        if (matchingRequests == 0) {
+            System.out.println("No requests match the selected filters.");
+        }
+        return matchingRequests;
     }
 
     private static List<ServiceRequest> loadRequests() throws IOException {
